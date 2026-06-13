@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="none"/>
+  <!-- Minimal arch mark in white -->
+  <path d="M256 768V512C256 370.6 370.6 256 512 256C653.4 256 768 370.6 768 512V768H640V512C640 441.3 582.7 384 512 384C441.3 384 384 441.3 384 512V768Z"
+        fill="#FFFFFF"/>
+</svg>
