@@ -208,3 +208,11 @@ This project is released under the MIT License.
 ## About BazaarBashe
 
 BazaarBashe is a platform for registering, managing, and displaying online store products. This plugin helps WooCommerce stores sync their products with BazaarBashe automatically and efficiently.
+
+## Bazaarbashe Paltform
+
+https://bazaarbashe.ir
+
+### Bazaarbashe API Platform
+
+https://api.bazaarbashe.ir
