@@ -37,6 +37,13 @@ class WooCommerce_Hooks {
 	protected $logger;
 
 	/**
+	 * Product events handled during the current request.
+	 *
+	 * @var array
+	 */
+	protected $handled_events = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Queue_Manager $queue Queue manager.
@@ -55,10 +62,32 @@ class WooCommerce_Hooks {
 	 * @return void
 	 */
 	public function register() {
-		add_action( 'woocommerce_new_product', array( $this, 'on_product_created' ), 20, 1 );
-		add_action( 'woocommerce_update_product', array( $this, 'on_product_updated' ), 20, 1 );
+		add_action( 'woocommerce_after_product_object_save', array( $this, 'on_product_object_saved' ), 30, 1 );
 		add_action( 'before_delete_post', array( $this, 'on_product_deleted' ), 20, 1 );
 		add_action( 'save_post_product', array( $this, 'on_product_saved' ), 20, 3 );
+	}
+
+	/**
+	 * Main automatic sync hook after WooCommerce has saved product data.
+	 *
+	 * @param \WC_Product $product Product.
+	 * @return void
+	 */
+	public function on_product_object_saved( $product ) {
+		if ( ! $product instanceof \WC_Product ) {
+			return;
+		}
+
+		$product_id = (int) $product->get_id();
+		$operation = get_post_meta( $product_id, '_bbsync_seen_product', true ) ? 'update' : 'create';
+		update_post_meta( $product_id, '_bbsync_seen_product', 1 );
+
+		if ( 'update' === $operation ) {
+			$this->on_product_updated( $product_id );
+			return;
+		}
+
+		$this->on_product_created( $product_id );
 	}
 
 	/**
@@ -68,6 +97,14 @@ class WooCommerce_Hooks {
 	 * @return void
 	 */
 	public function on_product_created( $product_id ) {
+		if ( $this->already_handled( 'create', $product_id ) ) {
+			return;
+		}
+
+		if ( ! $this->is_syncable_product_state( $product_id ) ) {
+			return;
+		}
+
 		if ( ! $this->settings->enabled( 'enable_create' ) ) {
 			$this->logger->log( 'create', 'skipped', 'همگام‌سازی خودکار ایجاد محصول غیرفعال است.', array( 'woo_product_id' => (int) $product_id ) );
 			return;
@@ -90,6 +127,14 @@ class WooCommerce_Hooks {
 	 * @return void
 	 */
 	public function on_product_updated( $product_id ) {
+		if ( $this->already_handled( 'update', $product_id ) ) {
+			return;
+		}
+
+		if ( ! $this->is_syncable_product_state( $product_id ) ) {
+			return;
+		}
+
 		if ( ! $this->settings->enabled( 'enable_update' ) ) {
 			$this->logger->log( 'update', 'skipped', 'همگام‌سازی خودکار بروزرسانی محصول غیرفعال است.', array( 'woo_product_id' => (int) $product_id ) );
 			return;
@@ -112,6 +157,10 @@ class WooCommerce_Hooks {
 	 * @return void
 	 */
 	public function on_product_deleted( $post_id ) {
+		if ( $this->already_handled( 'delete', $post_id ) ) {
+			return;
+		}
+
 		if ( 'product' !== get_post_type( $post_id ) ) {
 			$this->logger->log( 'delete', 'skipped', 'حذف ثبت‌شده مربوط به محصول ووکامرس نیست؛ همگام‌سازی انجام نشد.', array( 'woo_product_id' => (int) $post_id ) );
 			return;
@@ -141,6 +190,10 @@ class WooCommerce_Hooks {
 	 * @return void
 	 */
 	public function on_product_saved( $post_id, $post, $update ) {
+		if ( get_post_meta( (int) $post_id, '_bbsync_seen_product', true ) ) {
+			return;
+		}
+
 		if ( wp_is_post_revision( $post_id ) || ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) ) {
 			$this->logger->log( 'sync', 'skipped', 'این ذخیره‌سازی از نوع autosave یا revision است؛ همگام‌سازی انجام نشد.', array( 'woo_product_id' => (int) $post_id ) );
 			return;
@@ -151,11 +204,56 @@ class WooCommerce_Hooks {
 			return;
 		}
 
-		if ( $update ) {
-			$this->on_product_updated( $post_id );
+		if ( ! $this->is_syncable_product_state( $post_id ) ) {
 			return;
 		}
 
-		$this->on_product_created( $post_id );
+		if ( $update ) {
+			if ( ! $this->settings->enabled( 'enable_update' ) ) {
+				return;
+			}
+			$this->queue->enqueue( 'update', (int) $post_id, array( 'source' => 'save-post-fallback' ) );
+			return;
+		}
+
+		if ( ! $this->settings->enabled( 'enable_create' ) ) {
+			return;
+		}
+		$this->queue->enqueue( 'create', (int) $post_id, array( 'source' => 'save-post-fallback' ) );
+	}
+
+	/**
+	 * Avoid duplicate WooCommerce/save_post events in the same request.
+	 *
+	 * @param string $operation Operation.
+	 * @param int    $product_id Product ID.
+	 * @return bool
+	 */
+	protected function already_handled( $operation, $product_id ) {
+		$key = sanitize_key( $operation ) . ':' . (int) $product_id;
+		if ( isset( $this->handled_events[ $key ] ) ) {
+			return true;
+		}
+		$this->handled_events[ $key ] = true;
+		return false;
+	}
+
+	/**
+	 * Check whether the current product state should be synced as create/update.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return bool
+	 */
+	protected function is_syncable_product_state( $product_id ) {
+		$post = get_post( (int) $product_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return false;
+		}
+
+		if ( in_array( $post->post_status, array( 'trash', 'auto-draft' ), true ) ) {
+			return false;
+		}
+
+		return 'AUTO-DRAFT' !== strtoupper( trim( (string) $post->post_title ) );
 	}
 }
