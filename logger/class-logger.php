@@ -63,7 +63,7 @@ class Logger {
 			)
 		);
 
-		if ( in_array( $status, array( 'failed', 'skipped' ), true ) ) {
+		if ( 'failed' === $status ) {
 			$this->settings->update(
 				array(
 					'latest_issue' => array_merge(
