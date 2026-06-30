@@ -281,10 +281,10 @@ class Admin_Menu {
 						</p>
 						<div class="bbsync-log-meta">
 							<span>محصول: <?php echo esc_html( $log->woo_product_id ?: '-' ); ?></span>
-							<?php if ( ! empty( $diag['category'] ) ) : ?><span>دسته خطا: <?php echo esc_html( $diag['category'] ); ?></span><?php endif; ?>
+							<?php if ( ! empty( $diag['category'] ) && ! in_array( $log->status, array( 'success', 'started' ), true ) ) : ?><span>دسته خطا: <?php echo esc_html( $diag['category'] ); ?></span><?php endif; ?>
 							<?php if ( ! empty( $diag['http_status'] ) ) : ?><span>HTTP: <?php echo esc_html( $diag['http_status'] ); ?></span><?php endif; ?>
 						</div>
-						<?php if ( 'success' !== $log->status && ! empty( $diag['suggested_fix'] ) ) : ?>
+						<?php if ( ! in_array( $log->status, array( 'success', 'started' ), true ) && ! empty( $diag['suggested_fix'] ) ) : ?>
 							<div class="bbsync-help-box">
 								<strong>راه‌حل پیشنهادی</strong>
 								<p><?php echo esc_html( $diag['suggested_fix'] ); ?></p>
