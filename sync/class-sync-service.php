@@ -146,8 +146,13 @@ class Sync_Service {
 			return $image_ids;
 		}
 
+		$fresh_product = wc_get_product( $woo_product_id );
+		if ( $fresh_product ) {
+			$product = $fresh_product;
+		}
+
 		$payload = $this->builder->build( $product, $image_ids );
-		$hash    = $this->builder->hash( $product, $image_ids );
+		$price_debug = $this->builder->get_last_price_debug();
 		$mapping = $this->map_repository->get_by_woo_product_id( $woo_product_id );
 
 		$this->logger->log(
@@ -156,9 +161,24 @@ class Sync_Service {
 			'داده ارسالی محصول ساخته شد.',
 			array(
 				'woo_product_id' => $woo_product_id,
+				'price_debug'    => $price_debug,
 			),
 			$payload
 		);
+
+		if ( '' === (string) ( $payload['product_price'] ?? '' ) ) {
+			return new \WP_Error(
+				'bbsync_missing_product_price',
+				'قیمت محصول از ووکامرس قابل خواندن نیست و برای جلوگیری از ثبت قیمت صفر، همگام‌سازی انجام نشد.',
+				array(
+					'detail'      => wp_json_encode( $price_debug, JSON_UNESCAPED_UNICODE ),
+					'price_debug' => $price_debug,
+				)
+			);
+		}
+
+		$hash    = $this->builder->hash( $product, $image_ids );
+		$price_debug = $this->builder->get_last_price_debug();
 
 		if ( $mapping && $mapping->last_payload_hash === $hash && 'update' === $operation ) {
 			return true;
@@ -172,6 +192,7 @@ class Sync_Service {
 				array(
 					'woo_product_id'         => $woo_product_id,
 					'bazaarbashe_product_id' => (int) $mapping->bazaarbashe_product_id,
+					'price_debug'            => $price_debug,
 				),
 				$payload
 			);
@@ -206,6 +227,7 @@ class Sync_Service {
 			'درخواست API ارسال شد.',
 			array(
 				'woo_product_id' => $woo_product_id,
+				'price_debug'    => $price_debug,
 			),
 			$payload
 		);
@@ -228,7 +250,28 @@ class Sync_Service {
 		$bazaar_product_id = (int) ( $response['body']['product_id'] ?? $response['body']['id'] ?? 0 );
 
 		if ( $bazaar_product_id <= 0 ) {
-			return new \WP_Error( 'bbsync_missing_remote_id', 'شناسه محصول از سمت بازارباشه برنگشت.', array( 'detail' => wp_json_encode( $response['body'], JSON_UNESCAPED_UNICODE ) ) );
+			$error = new \WP_Error(
+				'bbsync_missing_remote_id',
+				'محصول در بازارباشه ایجاد شد، اما شناسه محصول در پاسخ API قابل تشخیص نبود.',
+				array(
+					'detail'   => wp_json_encode( $response['body'], JSON_UNESCAPED_UNICODE ),
+					'status'   => (int) ( $response['status'] ?? 0 ),
+					'endpoint' => Client::BASE_URL . '/v1/vendors/' . rawurlencode( (string) $vendor_identifier ) . '/products',
+					'body'     => $response['body'],
+				)
+			);
+			$this->logger->log(
+				'create',
+				'failed',
+				$error->get_error_message(),
+				array(
+					'woo_product_id'   => $woo_product_id,
+					'error_code'       => $error->get_error_code(),
+					'technical_detail' => wp_json_encode( $error->get_error_data(), JSON_UNESCAPED_UNICODE ),
+				),
+				(array) $error->get_error_data()
+			);
+			return $error;
 		}
 
 		$this->map_repository->upsert( $woo_product_id, $bazaar_product_id, $vendor_identifier, 'create', $hash );
