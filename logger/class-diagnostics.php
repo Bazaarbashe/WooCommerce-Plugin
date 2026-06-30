@@ -32,7 +32,15 @@ class Diagnostics {
 		$fix      = 'جزئیات لاگ را بررسی کنید و دوباره تلاش کنید.';
 		$retry    = '';
 
-		if ( in_array( $error_code, array( 'bbsync_missing_token' ), true ) ) {
+		if ( 'success' === $status ) {
+			$category = 'success';
+			$title    = 'همگام‌سازی با موفقیت انجام شد';
+			$fix      = '';
+		} elseif ( 'started' === $status ) {
+			$category = 'in_progress';
+			$title    = 'همگام‌سازی در حال انجام است';
+			$fix      = '';
+		} elseif ( in_array( $error_code, array( 'bbsync_missing_token' ), true ) ) {
 			$category = 'missing_access_token';
 			$title    = 'توکن دسترسی وارد نشده است';
 			$fix      = 'در بخش تنظیمات افزونه، توکن دسترسی بازارباشه را وارد و ذخیره کنید.';
