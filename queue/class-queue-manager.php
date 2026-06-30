@@ -280,7 +280,18 @@ class Queue_Manager {
 				),
 				(array) $result->get_error_data()
 			);
+			return $result;
 		}
+
+		$this->logger->log(
+			$operation,
+			'success',
+			'جاب همگام‌سازی با موفقیت انجام شد.',
+			array(
+				'woo_product_id' => (int) $product_id,
+				'source'         => $source,
+			)
+		);
 
 		return $result;
 	}
